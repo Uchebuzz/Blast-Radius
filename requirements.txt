@@ -1,0 +1,5 @@
+# Dependencies for the hosted Streamlit demo (Streamlit Community Cloud reads this).
+# Installs Blast Radius itself (core deps: typer, rich) plus Streamlit.
+# Mock-mode only — the live DataHub extra is intentionally omitted.
+.
+streamlit==1.60.0
