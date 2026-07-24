@@ -155,11 +155,18 @@ st.markdown(draft_migration(report))
 
 # -- Optional: plain-English narrative from Claude ---------------------------
 def _anthropic_key() -> str | None:
-    try:
-        key = st.secrets.get("ANTHROPIC_API_KEY")
-    except Exception:
-        key = None
-    return key or os.environ.get("ANTHROPIC_API_KEY")
+    # Accept either name, from Streamlit secrets or the environment.
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY"):
+        try:
+            val = st.secrets.get(name)
+        except Exception:
+            val = None
+        if val:
+            return val
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY"):
+        if os.environ.get(name):
+            return os.environ[name]
+    return None
 
 
 st.divider()
@@ -167,8 +174,10 @@ st.subheader("🧠 Plain-English explanation (Claude)")
 _key = _anthropic_key()
 if not _key:
     st.caption(
-        "Set `ANTHROPIC_API_KEY` in the app's Secrets to enable the AI narrative. "
-        "Claude only *explains* the deterministic report — it can't change the verdict."
+        "Set `ANTHROPIC_API_KEY` (or `ANTHROPIC_KEY`) in the app's Secrets as a "
+        "top-level key — `ANTHROPIC_API_KEY = \"sk-ant-…\"` — to enable the AI "
+        "narrative. Claude only *explains* the deterministic report — it can't "
+        "change the verdict."
     )
 elif st.button("Explain this report with Claude"):
     with st.spinner("Asking Claude…"):
