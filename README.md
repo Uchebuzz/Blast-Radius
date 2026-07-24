@@ -98,9 +98,22 @@ blastradius analyze raw.orders -c customer_id --output markdown
 # CI mode: exit non-zero if anything breaks
 blastradius analyze raw.orders -c customer_id --fail-on-breaking
 
+# Write the verdict BACK into DataHub (tags affected datasets; needs live DataHub)
+blastradius analyze raw.orders -c customer_id --write-back
+
 # Add a plain-English risk narrative on top of the report (powered by Claude)
 blastradius analyze raw.orders -c customer_id --fixture examples/sample_stack.json --explain
 ```
+
+### Write-back: closing the loop (optional)
+
+`--write-back` is the one path that *writes* to DataHub. After an analysis it tags
+the affected datasets in the catalog — `blast-radius-breaking` / `blast-radius-at-risk`
+— so the knowledge doesn't stay in your terminal. The next engineer or agent who
+opens that dataset in DataHub inherits it: *"a proposed upstream change breaks this
+— check before you touch it."* It's idempotent and writes an accurate snapshot each
+run (cleared datasets have stale verdict tags removed), and never touches your other
+tags. Everything else in Blast Radius is strictly read-only.
 
 ### AI explanation (optional)
 
@@ -128,6 +141,7 @@ Blast Radius chains the DataHub agent toolkit rather than calling a single endpo
 | Walk downstream dependencies | `get_lineage` (direction = downstream) |
 | Confirm the column is referenced | `list_schema_fields` + `get_dataset_queries` |
 | Attribute owners | `get_entities` |
+| **Write the verdict back** (tag affected datasets) | `GlobalTags` via the emitter (`--write-back`) |
 | Encode the workflow as a reusable recipe | **[DataHub Skill](skills/blast-radius.md)** |
 
 The [`skills/blast-radius.md`](skills/blast-radius.md) recipe is contributed back to

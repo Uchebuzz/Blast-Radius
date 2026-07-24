@@ -79,6 +79,38 @@ def _print_explanation(report) -> None:
         )
 
 
+def _write_back(report, client) -> None:
+    """Tag impacted datasets in DataHub with the verdict, degrading gracefully."""
+    from .datahub_client import McpDataHubClient
+    from .writeback import write_back
+
+    console.rule("[bold]Write-back to DataHub[/bold]")
+    if not isinstance(client, McpDataHubClient):
+        console.print(
+            "[yellow]Write-back needs a live DataHub analysis — set DATAHUB_GMS_URL "
+            "and don't pass --fixture.[/yellow]"
+        )
+        return
+    try:
+        written = write_back(report)
+    except RuntimeError as exc:  # no extra / no live DataHub
+        console.print(f"[yellow]{exc}[/yellow]")
+        return
+    except Exception as exc:  # noqa: BLE001 - never crash the report on a write error
+        console.print(f"[yellow]Write-back failed ({type(exc).__name__}: {exc}).[/yellow]")
+        return
+
+    if not written:
+        console.print("[green]Nothing to tag — no breaking or at-risk assets.[/green]")
+        return
+    for name, tag in written:
+        console.print(f"  [green]tagged[/green] {name} → [bold]{tag}[/bold]")
+    console.print(
+        f"[green]Wrote {len(written)} verdict tag(s) back to DataHub[/green] — "
+        "the next person or agent inherits the knowledge."
+    )
+
+
 @app.command("analyze")
 def analyze_cmd(
     dataset: str = typer.Argument(..., help="Dataset URN or name, e.g. raw.orders"),
@@ -99,6 +131,11 @@ def analyze_cmd(
     ),
     fail_on_breaking: bool = typer.Option(
         False, "--fail-on-breaking", help="Exit non-zero if breaking impact found (for CI)"
+    ),
+    write_back: bool = typer.Option(
+        False,
+        "--write-back",
+        help="Tag impacted datasets in DataHub with the verdict (needs live DataHub)",
     ),
 ):
     """Analyze the downstream blast radius of a column change."""
@@ -133,6 +170,9 @@ def analyze_cmd(
 
     if explain:
         _print_explanation(report)
+
+    if write_back:
+        _write_back(report, client)
 
     if fail_on_breaking and report.is_blocking():
         raise typer.Exit(1)
