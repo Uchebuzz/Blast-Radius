@@ -25,3 +25,6 @@ venv/
 # Generated reports
 reports/
 *.blastradius.html
+
+# Sample dataset DBs (downloaded, not committed)
+examples/healthcare/*.db

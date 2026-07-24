@@ -174,6 +174,14 @@ read: dataset schemas, table- and column-level lineage, ownership, SQL queries,
 two dashboards (with `inputFields`), and an ML feature table. A sample of the
 live output is in [`examples/sample-report-live.md`](examples/sample-report-live.md).
 
+### On DataHub's official sample data
+
+Blast Radius also runs against DataHub's [**healthcare** sample datapack](https://github.com/datahub-project/static-assets/tree/main/datasets/healthcare)
+— a forking pipeline where dropping `billing_amount` breaks `mart_billing` but
+**clears** `mart_demographics`, and dropping `age` does the opposite. See
+[`examples/healthcare/`](examples/healthcare/) for the loader, commands, and a
+captured report.
+
 ## Conversational mode (optional)
 
 ```bash
