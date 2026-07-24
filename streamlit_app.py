@@ -10,6 +10,7 @@ Run locally:   streamlit run streamlit_app.py
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -150,3 +151,30 @@ with right:
 
 st.subheader("🛠️ Migration plan (draft)")
 st.markdown(draft_migration(report))
+
+
+# -- Optional: plain-English narrative from Claude ---------------------------
+def _anthropic_key() -> str | None:
+    try:
+        key = st.secrets.get("ANTHROPIC_API_KEY")
+    except Exception:
+        key = None
+    return key or os.environ.get("ANTHROPIC_API_KEY")
+
+
+st.divider()
+st.subheader("🧠 Plain-English explanation (Claude)")
+_key = _anthropic_key()
+if not _key:
+    st.caption(
+        "Set `ANTHROPIC_API_KEY` in the app's Secrets to enable the AI narrative. "
+        "Claude only *explains* the deterministic report — it can't change the verdict."
+    )
+elif st.button("Explain this report with Claude"):
+    with st.spinner("Asking Claude…"):
+        try:
+            from blastradius.explain import explain_report
+
+            st.markdown(explain_report(report, api_key=_key))
+        except Exception as exc:  # surface API/network errors instead of crashing
+            st.error(f"Claude call failed: {exc}")

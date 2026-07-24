@@ -3,3 +3,4 @@
 # Mock-mode only — the live DataHub extra is intentionally omitted.
 .
 streamlit==1.60.0
+anthropic>=0.40
