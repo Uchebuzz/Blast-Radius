@@ -1,8 +1,14 @@
 """Blast Radius — interactive web demo (mock mode, no DataHub required).
 
-A thin UI over the exact same analysis engine the CLI uses (`analyze` over the
-bundled `examples/sample_stack.json`). Deployed so judges can test the impact
-logic from a URL without installing anything or standing up DataHub.
+A thin UI over the exact same analysis engine the CLI uses (`analyze`). It runs
+over bundled fixtures so judges can test the impact logic from a URL without
+installing anything or standing up DataHub. Two stacks ship:
+
+  * DataHub's official **healthcare** sample datapack (forking pipeline)
+  * a small orders → marts demo stack
+
+The full tool reads **live DataHub** via the Agent Context Kit and can write the
+verdict back into the catalog (`--write-back`); this page previews that write-back.
 
 Run locally:   streamlit run streamlit_app.py
 """
@@ -22,20 +28,39 @@ from blastradius.models import ChangeType, Risk
 from blastradius.pr import draft_migration
 from blastradius.report import render_mermaid
 
-FIXTURE = Path(__file__).parent / "examples" / "sample_stack.json"
+_HERE = Path(__file__).parent
+
+# Bundled stacks. Each has a canonical "example" scenario for the one-click button.
+STACKS = {
+    "DataHub healthcare sample": {
+        "path": _HERE / "examples" / "healthcare" / "healthcare_stack.json",
+        "dataset": "healthcare.raw_patients",
+        "column": "billing_amount",
+        "blurb": "DataHub's official healthcare datapack — a forking pipeline "
+        "(raw → staging → billing + demographics). Drop `billing_amount` to break "
+        "billing and clear demographics; drop `age` for the opposite.",
+    },
+    "Demo stack (orders → marts)": {
+        "path": _HERE / "examples" / "sample_stack.json",
+        "dataset": "raw.orders",
+        "column": "customer_id",
+        "blurb": "A small orders pipeline feeding two dashboards and an ML feature.",
+    },
+}
 
 RISK_STYLE = {
     Risk.BREAKING: ("🔴", "BREAKING"),
     Risk.AT_RISK: ("🟡", "AT RISK"),
     Risk.LOW: ("🟢", "CLEARED"),
 }
+WRITEBACK_TAG = {Risk.BREAKING: "blast-radius-breaking", Risk.AT_RISK: "blast-radius-at-risk"}
 
 st.set_page_config(page_title="Blast Radius", page_icon="💥", layout="wide")
 
 
 @st.cache_data
-def load_stack() -> dict:
-    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+def load_stack(path: str) -> dict:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def mermaid(diagram: str, height: int = 340) -> None:
@@ -50,45 +75,47 @@ def mermaid(diagram: str, height: int = 340) -> None:
     )
 
 
-stack = load_stack()
-datasets = {a["name"]: a for a in stack["assets"] if a["kind"] == "dataset"}
-
 st.title("💥 Blast Radius")
 st.caption(
     "See what breaks **before** you ship a schema change. This demo runs the real "
-    "analysis engine over a bundled sample data stack — no DataHub setup required. "
-    "The full tool reads **live DataHub** lineage via the Agent Context Kit."
+    "analysis engine over bundled sample data — no DataHub setup required. The full "
+    "tool reads **live DataHub** via the Agent Context Kit, and can tag the verdict "
+    "back into the catalog (`--write-back`)."
 )
 
 
 def load_example() -> None:
-    """One-click canonical scenario: drop raw.orders.customer_id."""
-    st.session_state["ds_name"] = "raw.orders"
-    st.session_state["column"] = "customer_id"
+    """One-click canonical scenario for the currently-selected stack."""
+    cfg = STACKS[st.session_state.get("stack", next(iter(STACKS)))]
+    st.session_state["ds_name"] = cfg["dataset"]
+    st.session_state["column"] = cfg["column"]
     st.session_state["change"] = ChangeType.DROP.value
 
 
-st.button(
-    "▶️  Run the example — drop `raw.orders.customer_id`",
-    type="primary",
-    on_click=load_example,
-    help="Loads the classic scenario and shows the impact below.",
-)
-
-# -- Inputs (results recompute automatically on any change) ------------------
-ds_names = list(datasets)
-st.session_state.setdefault("ds_name", "raw.orders" if "raw.orders" in datasets else ds_names[0])
-st.session_state.setdefault("change", ChangeType.DROP.value)
-
+# -- Inputs ------------------------------------------------------------------
+st.session_state.setdefault("stack", next(iter(STACKS)))
 with st.sidebar:
+    st.header("Data stack")
+    stack_name = st.selectbox("Stack", list(STACKS), key="stack")
+    cfg = STACKS[stack_name]
+    st.caption(cfg["blurb"])
+
+    stack = load_stack(str(cfg["path"]))
+    datasets = {a["name"]: a for a in stack["assets"] if a["kind"] == "dataset"}
+    ds_names = list(datasets)
+
     st.header("Proposed change")
+    # Reset dataset/column when they don't belong to the selected stack.
+    if st.session_state.get("ds_name") not in datasets:
+        st.session_state["ds_name"] = cfg["dataset"] if cfg["dataset"] in datasets else ds_names[0]
     ds_name = st.selectbox("Dataset", ds_names, key="ds_name")
     dataset = datasets[ds_name]
     cols = dataset["columns"]
-    # Reset the column when it doesn't belong to the newly-selected dataset.
     if st.session_state.get("column") not in cols:
-        st.session_state["column"] = "customer_id" if "customer_id" in cols else cols[0]
+        st.session_state["column"] = cfg["column"] if cfg["column"] in cols else cols[0]
     column = st.selectbox("Column", cols, key="column")
+
+    st.session_state.setdefault("change", ChangeType.DROP.value)
     change = st.radio("Change type", [c.value for c in ChangeType], horizontal=True, key="change")
     new_name = st.text_input("New name", value=f"{column}_v2") if change == ChangeType.RENAME.value else None
     new_type = st.text_input("New type", value="string") if change == ChangeType.RETYPE.value else None
@@ -96,9 +123,16 @@ with st.sidebar:
     st.divider()
     st.caption("[Source & setup →](https://github.com/Uchebuzz/Blast-Radius)")
 
+st.button(
+    f"▶️  Run the example — drop `{cfg['dataset']}.{cfg['column']}`",
+    type="primary",
+    on_click=load_example,
+    help="Loads the canonical scenario for the selected stack and shows the impact below.",
+)
+
 # -- Analysis ----------------------------------------------------------------
 report = analyze(
-    MockDataHubClient(str(FIXTURE)),
+    MockDataHubClient(str(cfg["path"])),
     dataset["urn"],
     column,
     change_type=ChangeType(change),
@@ -152,10 +186,23 @@ with right:
 st.subheader("🛠️ Migration plan (draft)")
 st.markdown(draft_migration(report))
 
+# -- Write-back preview ------------------------------------------------------
+st.divider()
+st.subheader("🏷️ Write-back to DataHub")
+writeback = [(i.asset.name, WRITEBACK_TAG[i.risk]) for i in report.breaking + report.at_risk]
+if writeback:
+    st.caption(
+        "In live mode, `blastradius analyze … --write-back` tags these datasets in "
+        "DataHub so the next person or agent inherits the verdict:"
+    )
+    for name, tag in writeback:
+        st.markdown(f"- `{name}` → **{tag}**")
+else:
+    st.caption("Nothing to tag — no breaking or at-risk assets for this change.")
+
 
 # -- Optional: plain-English narrative from Claude ---------------------------
 def _anthropic_key() -> str | None:
-    # Accept either name, from Streamlit secrets or the environment.
     for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY"):
         try:
             val = st.secrets.get(name)

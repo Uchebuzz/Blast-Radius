@@ -1,0 +1,253 @@
+{
+  "_comment": "DataHub's official healthcare sample datapack as a Blast Radius mock fixture (schema + column-level lineage + ownership). Forking pipeline: raw_patients -> staging_patients -> mart_billing + mart_demographics. Drop billing_amount to break billing and clear demographics; drop age for the opposite.",
+  "assets": [
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.raw_patients,PROD)",
+      "name": "healthcare.raw_patients",
+      "kind": "dataset",
+      "platform": "sqlite",
+      "columns": [
+        "name",
+        "age",
+        "gender",
+        "blood_type",
+        "medical_condition",
+        "date_of_admission",
+        "doctor",
+        "hospital",
+        "insurance_provider",
+        "billing_amount",
+        "room_number",
+        "admission_type",
+        "discharge_date",
+        "medication",
+        "test_results"
+      ],
+      "owners": [
+        {
+          "urn": "urn:li:corpGroup:clinical_team",
+          "name": "clinical_team",
+          "type": "group"
+        }
+      ],
+      "queries": [],
+      "upstream_field_refs": {}
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.staging_patients,PROD)",
+      "name": "healthcare.staging_patients",
+      "kind": "dataset",
+      "platform": "sqlite",
+      "columns": [
+        "name",
+        "age",
+        "gender",
+        "blood_type",
+        "medical_condition",
+        "date_of_admission",
+        "doctor",
+        "hospital",
+        "insurance_provider",
+        "billing_amount",
+        "room_number",
+        "admission_type",
+        "discharge_date",
+        "medication",
+        "test_results",
+        "gender_clean",
+        "blood_type_clean",
+        "condition_clean",
+        "admission_type_clean",
+        "test_results_clean",
+        "pipeline_status"
+      ],
+      "owners": [
+        {
+          "urn": "urn:li:corpGroup:clinical_team",
+          "name": "clinical_team",
+          "type": "group"
+        }
+      ],
+      "queries": [],
+      "upstream_field_refs": {
+        "name": [
+          "healthcare.raw_patients::name"
+        ],
+        "age": [
+          "healthcare.raw_patients::age"
+        ],
+        "gender": [
+          "healthcare.raw_patients::gender"
+        ],
+        "blood_type": [
+          "healthcare.raw_patients::blood_type"
+        ],
+        "medical_condition": [
+          "healthcare.raw_patients::medical_condition"
+        ],
+        "date_of_admission": [
+          "healthcare.raw_patients::date_of_admission"
+        ],
+        "doctor": [
+          "healthcare.raw_patients::doctor"
+        ],
+        "hospital": [
+          "healthcare.raw_patients::hospital"
+        ],
+        "insurance_provider": [
+          "healthcare.raw_patients::insurance_provider"
+        ],
+        "billing_amount": [
+          "healthcare.raw_patients::billing_amount"
+        ],
+        "room_number": [
+          "healthcare.raw_patients::room_number"
+        ],
+        "admission_type": [
+          "healthcare.raw_patients::admission_type"
+        ],
+        "discharge_date": [
+          "healthcare.raw_patients::discharge_date"
+        ],
+        "medication": [
+          "healthcare.raw_patients::medication"
+        ],
+        "test_results": [
+          "healthcare.raw_patients::test_results"
+        ],
+        "gender_clean": [
+          "healthcare.raw_patients::gender"
+        ],
+        "blood_type_clean": [
+          "healthcare.raw_patients::blood_type"
+        ],
+        "condition_clean": [
+          "healthcare.raw_patients::medical_condition"
+        ],
+        "admission_type_clean": [
+          "healthcare.raw_patients::admission_type"
+        ],
+        "test_results_clean": [
+          "healthcare.raw_patients::test_results"
+        ]
+      }
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.mart_billing,PROD)",
+      "name": "healthcare.mart_billing",
+      "kind": "dataset",
+      "platform": "sqlite",
+      "columns": [
+        "name",
+        "hospital",
+        "insurance_provider",
+        "admission_type",
+        "billing_amount",
+        "date_of_admission",
+        "discharge_date",
+        "length_of_stay_days",
+        "medication",
+        "pipeline_status"
+      ],
+      "owners": [
+        {
+          "urn": "urn:li:corpGroup:finance_team",
+          "name": "finance_team",
+          "type": "group"
+        }
+      ],
+      "queries": [],
+      "upstream_field_refs": {
+        "name": [
+          "healthcare.staging_patients::name"
+        ],
+        "hospital": [
+          "healthcare.staging_patients::hospital"
+        ],
+        "insurance_provider": [
+          "healthcare.staging_patients::insurance_provider"
+        ],
+        "admission_type": [
+          "healthcare.staging_patients::admission_type_clean"
+        ],
+        "billing_amount": [
+          "healthcare.staging_patients::billing_amount"
+        ],
+        "date_of_admission": [
+          "healthcare.staging_patients::date_of_admission"
+        ],
+        "discharge_date": [
+          "healthcare.staging_patients::discharge_date"
+        ],
+        "length_of_stay_days": [
+          "healthcare.staging_patients::date_of_admission",
+          "healthcare.staging_patients::discharge_date"
+        ],
+        "medication": [
+          "healthcare.staging_patients::medication"
+        ]
+      }
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.mart_demographics,PROD)",
+      "name": "healthcare.mart_demographics",
+      "kind": "dataset",
+      "platform": "sqlite",
+      "columns": [
+        "name",
+        "age",
+        "gender",
+        "blood_type",
+        "medical_condition",
+        "hospital",
+        "test_results",
+        "pipeline_status"
+      ],
+      "owners": [
+        {
+          "urn": "urn:li:corpGroup:research_team",
+          "name": "research_team",
+          "type": "group"
+        }
+      ],
+      "queries": [],
+      "upstream_field_refs": {
+        "name": [
+          "healthcare.staging_patients::name"
+        ],
+        "age": [
+          "healthcare.staging_patients::age"
+        ],
+        "gender": [
+          "healthcare.staging_patients::gender_clean"
+        ],
+        "blood_type": [
+          "healthcare.staging_patients::blood_type_clean"
+        ],
+        "medical_condition": [
+          "healthcare.staging_patients::condition_clean"
+        ],
+        "hospital": [
+          "healthcare.staging_patients::hospital"
+        ],
+        "test_results": [
+          "healthcare.staging_patients::test_results_clean"
+        ]
+      }
+    }
+  ],
+  "lineage": [
+    [
+      "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.raw_patients,PROD)",
+      "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.staging_patients,PROD)"
+    ],
+    [
+      "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.staging_patients,PROD)",
+      "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.mart_billing,PROD)"
+    ],
+    [
+      "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.staging_patients,PROD)",
+      "urn:li:dataset:(urn:li:dataPlatform:sqlite,healthcare.mart_demographics,PROD)"
+    ]
+  ]
+}
