@@ -80,7 +80,7 @@
       "upstream_field_refs": {}
     },
     {
-      "urn": "urn:li:mlFeatureTable:(sagemaker,customer_ltv)",
+      "urn": "urn:li:mlFeatureTable:(urn:li:dataPlatform:sagemaker,customer_ltv)",
       "name": "customer_ltv (ML feature)",
       "kind": "ml_feature",
       "platform": "sagemaker",
@@ -99,6 +99,6 @@
     ["urn:li:dataset:(urn:li:dataPlatform:dbt,staging.stg_orders,PROD)", "urn:li:dataset:(urn:li:dataPlatform:dbt,marts.daily_revenue,PROD)"],
     ["urn:li:dataset:(urn:li:dataPlatform:dbt,marts.daily_revenue,PROD)", "urn:li:dashboard:(looker,finance_dashboard)"],
     ["urn:li:dataset:(urn:li:dataPlatform:dbt,marts.customer_orders,PROD)", "urn:li:dashboard:(looker,customer_360)"],
-    ["urn:li:dataset:(urn:li:dataPlatform:dbt,marts.customer_orders,PROD)", "urn:li:mlFeatureTable:(sagemaker,customer_ltv)"]
+    ["urn:li:dataset:(urn:li:dataPlatform:dbt,marts.customer_orders,PROD)", "urn:li:mlFeatureTable:(urn:li:dataPlatform:sagemaker,customer_ltv)"]
   ]
 }

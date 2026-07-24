@@ -110,10 +110,16 @@ class MockDataHubClient(DataHubClient):
 
 
 class McpDataHubClient(DataHubClient):
-    """Live client backed by the DataHub MCP server / Agent Context Kit.
+    """Live client backed by the DataHub Agent Context Kit.
 
-    Wire-up is intentionally lazy-imported so the package installs and the demo
-    runs without the `datahub` extra. Install with:
+    Reads go through the Agent Context Kit's MCP tools — ``search``,
+    ``get_lineage``, ``get_entities``, ``get_dataset_queries`` — with the shared
+    ``DataHubGraph`` (from the same context) used for the two column-level
+    signals the tools don't surface directly: dataset fine-grained lineage
+    (``upstreamLineage``) and dashboard consumption (``inputFields``).
+
+    Wire-up is lazy-imported so the package installs and the offline demo run
+    without the ``datahub`` extra. Install with:
 
         pip install "blast-radius[datahub]"
 
@@ -123,50 +129,162 @@ class McpDataHubClient(DataHubClient):
     def __init__(self, gms_url: str, token: str | None = None):
         self.gms_url = gms_url
         self.token = token
-        self._client = self._connect()
+        self._sdk = None
+        self._graph = None
+        self._connect()
 
-    def _connect(self):  # pragma: no cover - requires live DataHub
+    def _connect(self) -> None:  # pragma: no cover - requires live DataHub
         try:
-            # The Agent Context Kit exposes the MCP tools through a Python client.
-            from datahub_agent_context import DataHubContextClient  # type: ignore
-        except ImportError as exc:  # pragma: no cover
+            from datahub.sdk.main_client import DataHubClient as _SDKClient
+            from datahub_agent_context.context import set_client
+        except ImportError as exc:
             raise RuntimeError(
                 "Live DataHub access needs the 'datahub' extra: "
-                "pip install \"blast-radius[datahub]\""
+                'pip install "blast-radius[datahub]"'
             ) from exc
-        return DataHubContextClient(server=self.gms_url, token=self.token)
+        self._sdk = _SDKClient(server=self.gms_url, token=self.token)
+        # Register the client in the Agent Context Kit context so the MCP tools
+        # (which read it via contextvars) work for the rest of this process.
+        set_client(self._sdk)
+        self._graph = self._sdk._graph
 
-    def get_entity(self, urn: str) -> Asset | None:  # pragma: no cover - requires live DataHub
-        raw = self._client.get_entities(urns=[urn])
-        if not raw:
-            return None
-        entity = raw[0]
+    # -- URN parsing helpers -------------------------------------------------
+    @staticmethod
+    def _dataset_name(ds_urn: str) -> str:
+        """urn:li:dataset:(urn:li:dataPlatform:dbt,staging.stg_orders,PROD) -> staging.stg_orders"""
+        prefix = "urn:li:dataset:("
+        if not ds_urn.startswith(prefix):
+            return ds_urn
+        inner = ds_urn[len(prefix):]
+        if inner.endswith(")"):
+            inner = inner[:-1]
+        parts = inner.split(",")
+        return parts[1] if len(parts) >= 2 else ds_urn
+
+    @classmethod
+    def _field_ref(cls, schema_field_urn: str) -> str:
+        """schemaField urn -> 'datasetName::column' (the analyzer's field key)."""
+        prefix = "urn:li:schemaField:("
+        inner = schema_field_urn[len(prefix):] if schema_field_urn.startswith(prefix) else schema_field_urn
+        if inner.endswith(")"):
+            inner = inner[:-1]
+        ds_urn, _, col = inner.rpartition(",")
+        return f"{cls._dataset_name(ds_urn)}::{col}"
+
+    @staticmethod
+    def _field_of(schema_field_urn: str) -> str:
+        col = schema_field_urn.rpartition(",")[2]
+        return col[:-1] if col.endswith(")") else col
+
+    # -- DataHubClient interface --------------------------------------------
+    def get_downstream(self, urn: str) -> list[str]:  # pragma: no cover
+        from datahub_agent_context.mcp_tools.lineage import get_lineage
+
+        res = get_lineage(urn=urn, upstream=False, max_hops=1)
+        results = res.get("downstreams", {}).get("searchResults", [])
+        return [r["entity"]["urn"] for r in results if r.get("entity", {}).get("urn")]
+
+    def get_entity(self, urn: str) -> Asset | None:  # pragma: no cover
+        from datahub_agent_context.mcp_tools.entities import get_entities
+
+        try:
+            raw = get_entities(urns=[urn])
+        except Exception:
+            raw = []
+        entity = raw[0] if raw else {}
+        kind = _infer_kind({"urn": urn})
+        # Datasets expose "name"; dashboards/charts carry it under properties.
+        name = (
+            entity.get("name")
+            or (entity.get("properties") or {}).get("name")
+            or self._dataset_name(urn)
+            or urn
+        )
+        platform = (entity.get("platform") or {}).get("name", "unknown")
+        columns = [
+            f["fieldPath"] for f in (entity.get("schemaMetadata") or {}).get("fields", [])
+        ]
+        owners = []
+        for o in (entity.get("ownership") or {}).get("owners", []):
+            owner_urn = (o.get("owner") or {}).get("urn")
+            if owner_urn:
+                otype = "group" if ":corpGroup:" in owner_urn else "user"
+                owners.append(Owner(urn=owner_urn, name=owner_urn.split(":")[-1], type=otype))
         return Asset(
-            urn=entity["urn"],
-            name=entity.get("name", entity["urn"]),
-            kind=_infer_kind(entity),
-            platform=entity.get("platform", "unknown"),
-            columns=[f["fieldPath"] for f in entity.get("schemaFields", [])],
-            owners=[
-                Owner(urn=o["urn"], name=o.get("name", o["urn"]), type=o.get("type", "user"))
-                for o in entity.get("owners", [])
-            ],
-            queries=[q["text"] for q in entity.get("queries", [])],
-            upstream_field_refs=entity.get("fineGrainedUpstreams", {}),
+            urn=urn,
+            name=name,
+            kind=kind,
+            platform=platform,
+            columns=columns,
+            owners=owners,
+            queries=self._queries(urn, kind),
+            upstream_field_refs=self._field_refs(urn, kind),
         )
 
     def list_schema_fields(self, urn: str) -> list[str]:  # pragma: no cover
-        return [f["fieldPath"] for f in self._client.list_schema_fields(urn=urn)]
-
-    def get_downstream(self, urn: str) -> list[str]:  # pragma: no cover
-        result = self._client.get_lineage(urn=urn, direction="DOWNSTREAM", degree=1)
-        return [e["urn"] for e in result.get("entities", [])]
+        asset = self.get_entity(urn)
+        return asset.columns if asset else []
 
     def get_dataset_queries(self, urn: str) -> list[str]:  # pragma: no cover
-        return [q["text"] for q in self._client.get_dataset_queries(urn=urn)]
+        return self._queries(urn, _infer_kind({"urn": urn}))
 
     def search(self, query: str) -> list[str]:  # pragma: no cover
-        return [e["urn"] for e in self._client.search(query=query).get("entities", [])]
+        from datahub_agent_context.mcp_tools.search import search as _search
+
+        try:
+            res = _search(query=query)
+        except Exception:
+            return []
+        return [
+            r["entity"]["urn"]
+            for r in res.get("searchResults", [])
+            if r.get("entity", {}).get("urn")
+        ]
+
+    # -- Column-level signals -----------------------------------------------
+    def _queries(self, urn: str, kind: AssetKind) -> list[str]:  # pragma: no cover
+        # DataHub's listQueries only supports dataset subjects.
+        if kind is not AssetKind.DATASET:
+            return []
+        from datahub_agent_context.mcp_tools.queries import get_dataset_queries
+
+        try:
+            res = get_dataset_queries(urn=urn)
+        except Exception:
+            return []
+        out = []
+        for q in res.get("queries", []):
+            value = (q.get("properties") or {}).get("statement", {}).get("value")
+            if value:
+                out.append(value)
+        return out
+
+    def _field_refs(self, urn: str, kind: AssetKind) -> dict[str, list[str]]:  # pragma: no cover
+        """Column-level upstreams, mapped to the analyzer's 'name::col' keys.
+
+        Datasets carry fine-grained lineage on the ``upstreamLineage`` aspect;
+        dashboards record consumed upstream columns on ``inputFields``.
+        """
+        refs: dict[str, list[str]] = {}
+        try:
+            if kind is AssetKind.DASHBOARD:
+                from datahub.metadata.schema_classes import InputFieldsClass
+
+                aspect = self._graph.get_aspect(urn, InputFieldsClass)
+                for f in getattr(aspect, "fields", None) or []:
+                    sf = f.schemaFieldUrn
+                    refs.setdefault(self._field_of(sf), []).append(self._field_ref(sf))
+            else:
+                from datahub.metadata.schema_classes import UpstreamLineageClass
+
+                aspect = self._graph.get_aspect(urn, UpstreamLineageClass)
+                for fgl in getattr(aspect, "fineGrainedLineages", None) or []:
+                    upstreams = [self._field_ref(u) for u in (fgl.upstreams or [])]
+                    for down in fgl.downstreams or []:
+                        refs.setdefault(self._field_of(down), []).extend(upstreams)
+        except Exception:
+            pass
+        return refs
 
 
 def _infer_kind(entity: dict) -> AssetKind:  # pragma: no cover - requires live DataHub
