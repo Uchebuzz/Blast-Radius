@@ -12,6 +12,22 @@ breaks" into a reviewed, one-glance impact report.
 
 ---
 
+## Try it
+
+**🚀 Live demo (hosted, nothing to install):**
+[blast-radius-…streamlit.app](https://blast-radius-bs2oqbj8dqj2k6aarwmbje.streamlit.app/)
+— pick a dataset, column, and change type, and see the blast radius instantly.
+
+Or run it locally, three ways:
+
+| How | Command | Needs |
+|---|---|---|
+| Interactive web app | `streamlit run streamlit_app.py` | `pip install -r requirements.txt` |
+| CLI on the bundled sample stack | `blastradius demo` | `pip install -e .` |
+| CLI against **live DataHub** | `blastradius analyze raw.orders -c customer_id` | a local DataHub ([see below](#connect-a-live-datahub)) |
+
+---
+
 ## The problem
 
 Every data engineer knows the fear: you rename or drop a column, hit merge, and
@@ -54,6 +70,18 @@ blastradius demo
  Notify: @dana, @alice, @bob
  ❌ MERGE BLOCKED — breaking downstream impact
 ```
+
+## Interactive web app
+
+A point-and-click version of the same engine (mock mode — no DataHub needed):
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
+Choose a dataset, column, and change type and the impact table, lineage graph, and
+migration plan update live. It's the code behind the [hosted demo](#try-it) above.
 
 ## Usage
 
@@ -127,16 +155,24 @@ flowchart LR
 ## Connect a live DataHub
 
 ```bash
-datahub docker quickstart                 # spin up local DataHub
+datahub docker quickstart                 # spin up local DataHub (UI on :9002)
 pip install -e ".[datahub]"
 export DATAHUB_GMS_URL=http://localhost:8080
-export DATAHUB_GMS_TOKEN=<personal access token>
-python examples/seed_lineage.py           # seed the demo stack
+export DATAHUB_GMS_TOKEN=<token>          # optional for a local quickstart
+python examples/seed_lineage.py           # seed the full demo stack
 blastradius analyze raw.orders -c customer_id
 ```
 
-With `DATAHUB_GMS_URL` set, Blast Radius automatically uses the live MCP client
-instead of the bundled fixture.
+With `DATAHUB_GMS_URL` set, Blast Radius automatically switches from the bundled
+fixture to reading **live DataHub** through the
+[**Agent Context Kit**](https://github.com/datahub-project/datahub) — `search`,
+`get_lineage`, `get_entities`, and `get_dataset_queries`, plus the shared graph for
+fine-grained column lineage and dashboard `inputFields`.
+
+`examples/seed_lineage.py` pushes the whole demo stack so there's real lineage to
+read: dataset schemas, table- and column-level lineage, ownership, SQL queries,
+two dashboards (with `inputFields`), and an ML feature table. A sample of the
+live output is in [`examples/sample-report-live.md`](examples/sample-report-live.md).
 
 ## Conversational mode (optional)
 
