@@ -1,0 +1,66 @@
+name: Blast Radius
+
+# Runs on every PR that touches SQL / dbt models and comments the downstream
+# impact of any column change, blocking the merge if something breaks.
+on:
+  pull_request:
+    paths:
+      - "**/*.sql"
+      - "**/*.yml"
+      - "models/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Blast Radius
+        run: pip install ".[datahub]"
+
+      - name: Detect changed column
+        id: change
+        # In a real pipeline, parse the dbt manifest / git diff to find the
+        # changed dataset + column. Here we read them from PR labels or inputs
+        # for the demo; swap in your detector.
+        run: |
+          echo "dataset=${{ vars.BR_DATASET || 'raw.orders' }}" >> "$GITHUB_OUTPUT"
+          echo "column=${{ vars.BR_COLUMN || 'customer_id' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Analyze blast radius
+        id: analyze
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+        run: |
+          # Falls back to the bundled sample stack when no DataHub is configured,
+          # so the Action produces a demo comment out of the box.
+          FIXTURE_FLAG=""
+          if [ -z "$DATAHUB_GMS_URL" ]; then
+            FIXTURE_FLAG="--fixture examples/sample_stack.json"
+          fi
+          blastradius analyze "${{ steps.change.outputs.dataset }}" \
+            -c "${{ steps.change.outputs.column }}" \
+            $FIXTURE_FLAG --output markdown --migration > report.md || true
+          echo "blocked=$(blastradius analyze "${{ steps.change.outputs.dataset }}" \
+            -c "${{ steps.change.outputs.column }}" $FIXTURE_FLAG \
+            --fail-on-breaking >/dev/null 2>&1 && echo false || echo true)" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: report.md
+
+      - name: Enforce gate
+        if: steps.analyze.outputs.blocked == 'true'
+        run: |
+          echo "::error::Blast Radius found breaking downstream impact. Address the migration plan before merging."
+          exit 1

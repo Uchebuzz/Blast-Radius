@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blast-radius"
+version = "0.1.0"
+description = "AI agent that traces DataHub lineage to show what breaks before you ship a schema change."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Blast Radius" }]
+keywords = ["datahub", "lineage", "data-quality", "ai-agent", "mcp", "metadata"]
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+# Live DataHub connectivity via the Agent Context Kit / MCP server.
+datahub = [
+    "datahub-agent-context>=0.1",
+    "acryl-datahub>=0.13",
+]
+# Optional agentic narration loop.
+agent = [
+    "claude-agent-sdk>=0.1",
+]
+# Optional plain-English risk narrative, powered by Claude.
+explain = [
+    "anthropic>=0.40",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+blastradius = "blastradius.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["blastradius"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

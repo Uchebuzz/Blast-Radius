@@ -1,0 +1,104 @@
+{
+  "_comment": "A realistic mini data stack used by MockDataHubClient so `blastradius` runs end-to-end with no live DataHub. Mirrors the shape returned by the DataHub MCP tools: get_entities, list_schema_fields, get_lineage, get_dataset_queries. Drop raw.orders::customer_id to see the demo blast radius.",
+  "assets": [
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,raw.orders,PROD)",
+      "name": "raw.orders",
+      "kind": "dataset",
+      "platform": "postgres",
+      "columns": ["order_id", "customer_id", "amount", "created_at"],
+      "owners": [{"urn": "urn:li:corpuser:dana", "name": "dana@acme.io", "type": "user"}],
+      "queries": [],
+      "upstream_field_refs": {}
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:dbt,staging.stg_orders,PROD)",
+      "name": "staging.stg_orders",
+      "kind": "dataset",
+      "platform": "dbt",
+      "columns": ["order_id", "customer_id", "amount", "created_at"],
+      "owners": [{"urn": "urn:li:corpuser:dana", "name": "dana@acme.io", "type": "user"}],
+      "queries": [
+        "select order_id, customer_id, amount, created_at from raw.orders"
+      ],
+      "upstream_field_refs": {
+        "order_id": ["raw.orders::order_id"],
+        "customer_id": ["raw.orders::customer_id"],
+        "amount": ["raw.orders::amount"],
+        "created_at": ["raw.orders::created_at"]
+      }
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:dbt,marts.customer_orders,PROD)",
+      "name": "marts.customer_orders",
+      "kind": "dataset",
+      "platform": "dbt",
+      "columns": ["customer_id", "order_count", "lifetime_amount"],
+      "owners": [{"urn": "urn:li:corpuser:alice", "name": "alice@acme.io", "type": "user"}],
+      "queries": [
+        "select customer_id, count(*) as order_count, sum(amount) as lifetime_amount from staging.stg_orders group by customer_id"
+      ],
+      "upstream_field_refs": {
+        "customer_id": ["staging.stg_orders::customer_id"],
+        "order_count": ["staging.stg_orders::order_id"],
+        "lifetime_amount": ["staging.stg_orders::amount"]
+      }
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:dbt,marts.daily_revenue,PROD)",
+      "name": "marts.daily_revenue",
+      "kind": "dataset",
+      "platform": "dbt",
+      "columns": ["day", "revenue"],
+      "owners": [{"urn": "urn:li:corpuser:carol", "name": "carol@acme.io", "type": "user"}],
+      "queries": [
+        "select date_trunc('day', created_at) as day, sum(amount) as revenue from staging.stg_orders group by 1"
+      ],
+      "upstream_field_refs": {
+        "day": ["staging.stg_orders::created_at"],
+        "revenue": ["staging.stg_orders::amount"]
+      }
+    },
+    {
+      "urn": "urn:li:dashboard:(looker,finance_dashboard)",
+      "name": "Finance Dashboard",
+      "kind": "dashboard",
+      "platform": "looker",
+      "columns": [],
+      "owners": [{"urn": "urn:li:corpuser:carol", "name": "carol@acme.io", "type": "user"}],
+      "queries": ["select day, revenue from marts.daily_revenue order by day"],
+      "upstream_field_refs": {}
+    },
+    {
+      "urn": "urn:li:dashboard:(looker,customer_360)",
+      "name": "Customer 360",
+      "kind": "dashboard",
+      "platform": "looker",
+      "columns": [],
+      "owners": [{"urn": "urn:li:corpuser:alice", "name": "alice@acme.io", "type": "user"}],
+      "queries": ["select customer_id, order_count, lifetime_amount from marts.customer_orders"],
+      "upstream_field_refs": {}
+    },
+    {
+      "urn": "urn:li:mlFeatureTable:(sagemaker,customer_ltv)",
+      "name": "customer_ltv (ML feature)",
+      "kind": "ml_feature",
+      "platform": "sagemaker",
+      "columns": ["customer_id", "ltv"],
+      "owners": [{"urn": "urn:li:corpuser:bob", "name": "bob@acme.io", "type": "user"}],
+      "queries": ["select customer_id, lifetime_amount as ltv from marts.customer_orders"],
+      "upstream_field_refs": {
+        "customer_id": ["marts.customer_orders::customer_id"],
+        "ltv": ["marts.customer_orders::lifetime_amount"]
+      }
+    }
+  ],
+  "lineage": [
+    ["urn:li:dataset:(urn:li:dataPlatform:postgres,raw.orders,PROD)", "urn:li:dataset:(urn:li:dataPlatform:dbt,staging.stg_orders,PROD)"],
+    ["urn:li:dataset:(urn:li:dataPlatform:dbt,staging.stg_orders,PROD)", "urn:li:dataset:(urn:li:dataPlatform:dbt,marts.customer_orders,PROD)"],
+    ["urn:li:dataset:(urn:li:dataPlatform:dbt,staging.stg_orders,PROD)", "urn:li:dataset:(urn:li:dataPlatform:dbt,marts.daily_revenue,PROD)"],
+    ["urn:li:dataset:(urn:li:dataPlatform:dbt,marts.daily_revenue,PROD)", "urn:li:dashboard:(looker,finance_dashboard)"],
+    ["urn:li:dataset:(urn:li:dataPlatform:dbt,marts.customer_orders,PROD)", "urn:li:dashboard:(looker,customer_360)"],
+    ["urn:li:dataset:(urn:li:dataPlatform:dbt,marts.customer_orders,PROD)", "urn:li:mlFeatureTable:(sagemaker,customer_ltv)"]
+  ]
+}
