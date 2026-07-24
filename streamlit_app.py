@@ -59,19 +59,36 @@ st.caption(
     "The full tool reads **live DataHub** lineage via the Agent Context Kit."
 )
 
+
+def load_example() -> None:
+    """One-click canonical scenario: drop raw.orders.customer_id."""
+    st.session_state["ds_name"] = "raw.orders"
+    st.session_state["column"] = "customer_id"
+    st.session_state["change"] = ChangeType.DROP.value
+
+
+st.button(
+    "▶️  Run the example — drop `raw.orders.customer_id`",
+    type="primary",
+    on_click=load_example,
+    help="Loads the classic scenario and shows the impact below.",
+)
+
 # -- Inputs (results recompute automatically on any change) ------------------
+ds_names = list(datasets)
+st.session_state.setdefault("ds_name", "raw.orders" if "raw.orders" in datasets else ds_names[0])
+st.session_state.setdefault("change", ChangeType.DROP.value)
+
 with st.sidebar:
     st.header("Proposed change")
-    ds_names = list(datasets)
-    ds_name = st.selectbox(
-        "Dataset", ds_names, index=ds_names.index("raw.orders") if "raw.orders" in datasets else 0
-    )
+    ds_name = st.selectbox("Dataset", ds_names, key="ds_name")
     dataset = datasets[ds_name]
     cols = dataset["columns"]
-    column = st.selectbox(
-        "Column", cols, index=cols.index("customer_id") if "customer_id" in cols else 0
-    )
-    change = st.radio("Change type", [c.value for c in ChangeType], horizontal=True)
+    # Reset the column when it doesn't belong to the newly-selected dataset.
+    if st.session_state.get("column") not in cols:
+        st.session_state["column"] = "customer_id" if "customer_id" in cols else cols[0]
+    column = st.selectbox("Column", cols, key="column")
+    change = st.radio("Change type", [c.value for c in ChangeType], horizontal=True, key="change")
     new_name = st.text_input("New name", value=f"{column}_v2") if change == ChangeType.RENAME.value else None
     new_type = st.text_input("New type", value="string") if change == ChangeType.RETYPE.value else None
     st.caption("Results update automatically as you change the inputs.")
@@ -100,6 +117,16 @@ c3.metric("Cleared", len(report.low))
 
 owners = ", ".join(o.handle for o in report.impacted_owners) or "—"
 st.markdown(f"**Change:** `{report.change.describe()}`  \n**Notify:** {owners}")
+
+if report.breaking:
+    top = ", ".join(f"`{i.asset.name}`" for i in report.breaking[:3])
+    more = " …" if len(report.breaking) > 3 else ""
+    st.info(
+        f"**Direct answer:** this change breaks **{len(report.breaking)}** downstream "
+        f"asset(s) — {top}{more}. Notify {owners}."
+    )
+else:
+    st.info("**Direct answer:** no breaking downstream impact — safe to merge.")
 
 left, right = st.columns([3, 2])
 with left:
